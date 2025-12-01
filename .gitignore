@@ -1,0 +1,50 @@
+# --- SISTEMA / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- PYTHON GENERAL ---
+__pycache__/
+*.py[cod]
+*$py.class
+# Entornos virtuales
+venv/
+env/
+.env
+
+# --- FRONTEND (React) ---
+# Nunca subir las librerías, pesan cientos de megas
+frontend/node_modules/
+node_modules/
+# Archivos de build de producción
+frontend/build/
+frontend/dist/
+# Logs de npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- TERRAFORM (Infra) ---
+# Carpetas de plugins locales
+**/.terraform/
+# Archivos de ESTADO (¡Muy importante ignorar esto!)
+*.tfstate
+*.tfstate.backup
+# Archivos de variables con secretos (credenciales)
+*.tfvars
+# Lock file (Opcional: usualmente se sube, pero si te da problemas bloquéalo)
+# .terraform.lock.hcl
+
+# --- ARCHIVOS DE PRUEBAS Y DATOS ---
+# Videos pesados
+*.mp4
+*.avi
+*.mov
+# Resultados generados o temporales
+tests/frames_data/
+graphs/
+
+# --- EXTRA ---
+# Si usas Postman y tienes claves en el environment, ignóralo
+postman_collection/*.json
