@@ -27,6 +27,11 @@ resource "azurerm_container_app" "yolo_app" {
       }
 
       env {
+        name  = "WORKERS"
+        value = "2"  # <--- Optimizamos para las 2 CPUs asignadas
+      }
+
+      env {
         name  = "ENABLE_BATCHING"
         value = var.enable_batching # "true" o "false"
       }

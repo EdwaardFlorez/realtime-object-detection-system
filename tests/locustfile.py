@@ -1,88 +1,71 @@
-from locust import HttpUser, task, between, events
+from locust import HttpUser, task, between, events, constant
 import os
 import random
-import time
 import json
+import time
 
-# --- 1. CONFIGURACIÓN Y CARGA DE DATOS ---
+# --- CONFIGURACIÓN DE FPS (NUEVO) ---
+# Leemos la variable de entorno. Si no existe, es 0 (Modo Estrés)
+TARGET_FPS = float(os.getenv("TARGET_FPS", "0"))
+
+# --- 1. CARGA PREVIA DE FRAMES ---
 FRAMES_DIR = "frames_data"
 VIDEO_FRAMES = []
 
-# Verificación de seguridad
 if not os.path.exists(FRAMES_DIR):
-    print(f"ERROR CRÍTICO: No se encuentra la carpeta '{FRAMES_DIR}'.")
-    print("Ejecuta primero el script 'extract_frames.py'.")
+    print(f"ERROR: No existe frames_data.")
     exit(1)
 
-# Cargar imágenes en memoria (Limitamos a 50 para no saturar RAM)
-#print("--> Cargando frames en memoria RAM...")
-#files = sorted([f for f in os.listdir(FRAMES_DIR) if f.endswith(".jpg")])
-
-# CÁMBIALO POR ESTO (Cargar TODO):
-print(f"--> Cargando {len(os.listdir(FRAMES_DIR))} frames en memoria (aprox 113MB)...")
+print(f"--> Cargando {len(os.listdir(FRAMES_DIR))} frames en memoria...")
 files = sorted([f for f in os.listdir(FRAMES_DIR) if f.endswith(".jpg")])
-
-# Tomamos una muestra si hay muchos, o todos si son pocos
-#frames_to_load = files[:50] 
-
 for filename in files:
-    file_path = os.path.join(FRAMES_DIR, filename)
-    with open(file_path, "rb") as f:
+    with open(os.path.join(FRAMES_DIR, filename), "rb") as f:
         VIDEO_FRAMES.append(f.read())
+print(f"--> ¡Listo! {len(VIDEO_FRAMES)} frames cargados.")
 
-print(f"--> ¡Listo! {len(VIDEO_FRAMES)} frames cargados. Iniciando prueba de carga.")
+# --- LOGICA DE TIEMPO DE ESPERA ---
+def get_wait_time():
+    if TARGET_FPS > 0:
+        # Si queremos 30 FPS, esperamos 1/30 segundos entre envíos
+        # (Menos un pequeño margen para compensar la latencia de red)
+        return constant(1 / TARGET_FPS)
+    else:
+        # Modo Estrés (Máxima velocidad)
+        return between(0.0, 0.01)
 
-# --- 2. CLASE DE USUARIO (CÁMARA SIMULADA) ---
 class CameraUser(HttpUser):
-    # Tiempo de espera entre peticiones (simula los FPS de la cámara)
-    # between(0.1, 0.5) significa que envía entre 2 y 10 fotos por segundo por usuario
-    #wait_time = between(0.1, 0.5) 
-    wait_time = between(0.0, 0.01)
+    # Asignamos la función dinámica
+    wait_time = get_wait_time()
     
     def on_start(self):
-        # Cada "usuario" empieza en un frame aleatorio del video
         self.frame_index = random.randint(0, len(VIDEO_FRAMES) - 1)
+        # Imprimir modo solo una vez
+        if self.frame_index == 0: 
+            mode = f"🎥 SIMULACIÓN {TARGET_FPS} FPS" if TARGET_FPS > 0 else "🔥 ESTRÉS MÁXIMO"
+            print(f"--- INICIANDO USUARIO EN MODO: {mode} ---")
 
     @task
     def stream_video(self):
-        # 1. Preparar la imagen
+        # ... (EL RESTO DEL CÓDIGO DE LA TAREA QUEDA IGUAL) ...
         image_data = VIDEO_FRAMES[self.frame_index]
         self.frame_index = (self.frame_index + 1) % len(VIDEO_FRAMES)
-        
         files = {'file': ('frame.jpg', image_data, 'image/jpeg')}
         
-        # 2. Enviar petición POST
-        # Usamos catch_response=True para validar nosotros mismos el JSON
-        with self.client.post("/predict", files=files, catch_response=True, name="Total_Network_Time") as response:
-            
+        with self.client.post("/predict", files=files, catch_response=True, name="Inference") as response:
             if response.status_code == 200:
                 try:
-                    # Parsear respuesta del Backend
                     data = response.json()
-                    
-                    # --- PUNTO CRÍTICO PARA LA TESIS ---
-                    # Extraemos el tiempo que la GPU reportó (sin latencia de red)
                     if "inference_time_ms" in data:
-                        server_inference_time = data["inference_time_ms"]
-                        
-                        # Inyectamos este dato como una métrica separada en Locust
-                        # Aparecerá en la tabla bajo el nombre "GPU_Inferencia_Pura"
                         events.request.fire(
                             request_type="Internal",
                             name="GPU_Inferencia_Pura",
-                            response_time=server_inference_time,
+                            response_time=data["inference_time_ms"],
                             response_length=len(response.content),
                         )
-                        
-                        # Marcamos la petición HTTP como exitosa
                         response.success()
                     else:
-                        response.failure("JSON válido pero falta campo 'inference_time_ms'")
-                        
-                except json.JSONDecodeError:
-                    response.failure("Respuesta no es un JSON válido")
+                        response.failure("JSON incompleto")
                 except Exception as e:
-                    response.failure(f"Error procesando datos: {str(e)}")
+                    response.failure(f"JSON Error: {e}")
             else:
-                # Si el servidor da error (500, 502, 504), registramos el fallo
-                response.failure(f"Error HTTP {response.status_code}: {response.text[:100]}")
+                response.failure(f"HTTP {response.status_code}")

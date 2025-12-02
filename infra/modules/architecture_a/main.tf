@@ -90,16 +90,17 @@ resource "azurerm_linux_virtual_machine" "vm" {
   }
 
   # Script de arranque (User Data)
+  # Script de arranque (User Data)
   custom_data = base64encode(<<-EOF
     #!/bin/bash
-    # 1. Esperar a que Docker esté listo (La imagen HPC ya lo trae, pero aseguramos)
+    # 1. Esperar a que Docker esté listo
     until docker info; do sleep 5; done
 
     # 2. Login al Registry
     docker login ${var.acr_server} -u ${var.acr_username} -p ${var.acr_admin_password}
     
-    # 3. Correr el contenedor (MODO GPU ACTIVO)
-    # CAMBIO CRÍTICO: Agregamos '--gpus all' para pasar la tarjeta al contenedor
+    # 3. Correr el contenedor
+    # Nota: Pasamos la variable WORKERS para que el Dockerfile optimizado lance 8 procesos.
     docker run -d \
       --name yolo_api \
       --restart always \
@@ -107,7 +108,8 @@ resource "azurerm_linux_virtual_machine" "vm" {
       -p 8000:8000 \
       -e YOLO_MODEL="yolo11n.pt" \
       -e ENABLE_BATCHING="${var.enable_batching}" \
-      -e BATCH_SIZE="8" \
+      -e BATCH_SIZE="${var.enable_batching == "true" ? "32" : "8"}" \
+      -e WORKERS="8" \
       ${var.acr_server}/yolo-api:latest
   EOF
   )
